@@ -3,7 +3,7 @@ using Microsoft.MixedReality.WebRTC;
 using Remotely.Desktop.Core.Models;
 using Remotely.Shared.Helpers;
 using Remotely.Shared.Models;
-using Remotely.Shared.Models.RtcDtos;
+using Remotely.Shared.Models.RemoteControlDtos;
 using Remotely.Shared.Utilities;
 using System;
 using System.Collections.Generic;
@@ -16,7 +16,7 @@ namespace Remotely.Desktop.Core.Services
 {
     public class WebRtcSession : IDisposable
     {
-        public WebRtcSession(Viewer viewer, IRtcMessageHandler rtcMessageHandler)
+        public WebRtcSession(Viewer viewer, IDtoMessageHandler rtcMessageHandler)
         {
             Viewer = viewer;
             RtcMessageHandler = rtcMessageHandler;
@@ -40,7 +40,7 @@ namespace Remotely.Desktop.Core.Services
         private DataChannel CaptureChannel { get; set; }
         private IceServerModel[] IceServers { get; set; }
         private PeerConnection PeerSession { get; set; }
-        private IRtcMessageHandler RtcMessageHandler { get; }
+        private IDtoMessageHandler RtcMessageHandler { get; }
         private Transceiver Transceiver { get; set; }
         private ExternalVideoTrackSource VideoSource { get; set; }
         private Viewer Viewer { get; }
@@ -109,65 +109,9 @@ namespace Remotely.Desktop.Core.Services
             PeerSession.CreateOffer();
         }
 
-        public void SendAudioSample(byte[] audioSample)
+        public void SendDto<T>(T dto) where T : BaseDto
         {
-            SendDto(new AudioSampleDto(audioSample));
-        }
-
-        public void SendCaptureFrame(int left, int top, int width, int height, byte[] imageBytes, long imageQuality)
-        {
-            for (var i = 0; i < imageBytes.Length; i += 50_000)
-            {
-                SendDto(new CaptureFrameDto()
-                {
-                    Left = left,
-                    Top = top,
-                    Width = width,
-                    Height = height,
-                    EndOfFrame = false,
-                    ImageBytes = imageBytes.Skip(i).Take(50_000).ToArray(),
-                    ImageQuality = imageQuality
-                });
-            }
-            SendDto(new CaptureFrameDto()
-            {
-                Left = left,
-                Top = top,
-                Width = width,
-                Height = height,
-                EndOfFrame = true,
-                ImageQuality = imageQuality
-            });
-        }
-
-        public void SendClipboardText(string clipboardText)
-        {
-            SendDto(new ClipboardTextDto(clipboardText));
-        }
-
-        public void SendCursorChange(CursorInfo cursorInfo)
-        {
-            SendDto(new CursorChangeDto(cursorInfo.ImageBytes, cursorInfo.HotSpot.X, cursorInfo.HotSpot.Y, cursorInfo.CssOverride));
-        }
-
-        public void SendMachineName(string machineName)
-        {
-            SendDto(new MachineNameDto(machineName));
-        }
-
-        public void SendScreenData(string selectedScreen, string[] displayNames)
-        {
-            SendDto(new ScreenDataDto(selectedScreen, displayNames));
-        }
-
-        public void SendScreenSize(int width, int height)
-        {
-            SendDto(new ScreenSizeDto(width, height));
-        }
-
-        public void SendWindowsSessions(List<WindowsSession> windowsSessions)
-        {
-            SendDto(new WindowsSessionsDto(windowsSessions));
+            CaptureChannel.SendMessage(MessagePackSerializer.Serialize(dto));
         }
 
         public async Task SetRemoteDescription(string type, string sdp)
@@ -210,7 +154,7 @@ namespace Remotely.Desktop.Core.Services
         private async void CaptureChannel_MessageReceived(byte[] obj)
         {
             Logger.Debug($"DataChannel message received.  Size: {obj.Length}");
-            await RtcMessageHandler.ParseMessage(obj);
+            await RtcMessageHandler.ParseMessage(Viewer, obj);
         }
         private async void CaptureChannel_StateChanged()
         {
@@ -286,10 +230,6 @@ namespace Remotely.Desktop.Core.Services
         {
             Logger.Debug($"Local SDP ready.");
             LocalSdpReady?.Invoke(this, message);
-        }
-        private void SendDto<T>(T dto)
-        {
-            CaptureChannel.SendMessage(MessagePackSerializer.Serialize(dto));
         }
     }
 }
